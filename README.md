@@ -7,8 +7,12 @@ Connect db and run migration findxai.session.sql
 
 Run MCP client
 
+- pipx install poetry
+
 ```sh
 cd src/projects/host_chat
+
+poetry install
 
 export FINDXAI_MCP_CONNECTION=http://localhost:8080/sse  
 
