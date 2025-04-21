@@ -10,13 +10,15 @@ from dotenv import load_dotenv
 
 import search_pb2
 import search_pb2_grpc
+import content_pb2
+import content_pb2_grpc
 
 load_dotenv()
 
 mcp = FastMCP("findxai")
 
 @mcp.tool()
-async def find_contents(
+async def search_contents(
     c2coff: str = "",
     cr: str = "",
     date_restrict: str = "",
@@ -47,13 +49,47 @@ async def find_contents(
     sort: str = "",
     start: int = 1,
 ) -> str:
-    """Search for contents in realtime by Google Custom Search API.\n
-    Ideally for searching question throughout the internet and return corresponding-accurately contents to the search
+    """
+    Performs a Google Custom Search with the given parameters.
+
+    Args:
+        c2coff (str): Enables/disables Simplified and Traditional Chinese Search. '1' to disable, '0' to enable (default).
+        cr (str): Restricts results to documents from a country (e.g., 'countryUS'). Use boolean operators if needed.
+        date_restrict (str): Restricts results by date. Formats: 'd[number]', 'w[number]', 'm[number]', 'y[number]' (e.g., 'd7' for the last 7 days); the number must be an integer ≥ 1.
+        exact_terms (str): Phrase that all results must contain.
+        exclude_terms (str): Word or phrase that must not appear in any results.
+        file_type (str): Restricts results to specified file extension (e.g., 'pdf', 'docx').
+        filter (str): Duplicate content filter control. '0' to disable, '1' to enable (default).
+        gl (str): Geolocation of end user as two-letter country code (e.g., 'us', 'de').
+        high_range (str): Ending value for an inclusive search range; use with low_range.
+        hl (str): UI language for search (e.g., 'en', 'fr').
+        hq (str): Terms to append to query as if combined with logical AND.
+        img_color_type (str): Returns images with specific color type ('color', 'gray', 'mono', 'trans').
+        img_dominant_color (str): Returns images with a specific dominant color ('black', 'blue', etc.).
+        img_size (str): Returns images of specified size ('huge', 'large', 'medium', etc.).
+        img_type (str): Returns images of a specified type ('clipart', 'face', etc.).
+        language (str): Restricts search to documents written in a language (e.g., 'lang_en').
+        link_site (str): Requires results to contain a link to this URL.
+        low_range (str): Starting value for a search range; use with high_range.
+        lr (str): Restricts search language (e.g., 'lang_en').
+        num (int): Number of results to return (1–10).
+        or_terms (str): Additional terms where results must contain at least one.
+        q (str): Query string.
+        rights (str): Filters by license (e.g., 'cc_publicdomain').
+        safe (str): SafeSearch level ('active' for filter, 'off').
+        search_type (str): Type of search ('image' for image search).
+        site_search (str): Site to include or exclude results from.
+        site_search_filter (str): 'i' to include, 'e' to exclude site_search.
+        sort (str): Sort expression (e.g., 'date').
+        start (int): Index of first result (for pagination).
+    Returns:
+        str: Formatted string with search results.
     """
 
     target = os.getenv("FINDXAI_GRPC_CONNECTION", "localhost:50051")
     channel = aio.insecure_channel(target)
     stub = search_pb2_grpc.SearchServiceStub(channel)
+    content_stub = content_pb2_grpc.ContentServiceStub(channel)
 
     request =  search_pb2.SearchRequest(
         c2coff=c2coff,
@@ -89,7 +125,59 @@ async def find_contents(
     response = await stub.Search(request)
 
     resp_dict = MessageToDict(response, preserving_proto_field_name=True)
-    return json.dumps(resp_dict, ensure_ascii=False)
+    list_result = [
+        res["snippet"]
+        for res in resp_dict.get("results", [])
+        if res.get("link")
+    ]
+
+    # content_request = content_pb2.ExtractContentFromLinksRequest(links=list_link)
+    # content_response = await content_stub.ExtractContentFromLinks(content_request)
+    # content_resp_dict = MessageToDict(content_response, preserving_proto_field_name=True)
+
+    # list_result = [
+    #     res["content"]
+    #     for res in content_resp_dict.get("contents", [])
+    #     if res.get("title")
+    # ]
+
+    header = f"The result for query: {q}"
+    sep = "\n"
+    body = sep.join(list_result)
+    return f"{header}{sep}{body}"
+
+@mcp.tool()
+async def extract_content_from_article_links(
+    links: list[str] = [],
+) -> str:
+    """
+    Extracts content from the provided list of article links.
+
+    Args:
+        links (list[str]): List of URLs to extract content from.
+
+    Returns:
+        str: Formatted string with extracted content.
+    """
+
+    target = os.getenv("FINDXAI_GRPC_CONNECTION", "localhost:50051")
+    channel = aio.insecure_channel(target)
+    stub = content_pb2_grpc.ContentServiceStub(channel)
+
+    request = content_pb2.ExtractContentFromLinksRequest(links=links)
+    response = await stub.ExtractContentFromLinks(request)
+
+    resp_dict = MessageToDict(response, preserving_proto_field_name=True)
+    list_result = [
+        res["content"]
+        for res in resp_dict.get("contents", [])
+        if res.get("title")
+    ]
+
+    header = f"The extracted content from links: {links}"
+    sep = "\n"
+    body = sep.join(list_result)
+    return f"{header}{sep}{body}"
 
 if __name__ == "__main__":
     # Initialize and run the server

@@ -14,9 +14,6 @@ class FindxAiClient:
   
   async def connect_to_server(self):
     """Connect to an FindxAI SSE server
-        
-    Args:
-        server_script_path: Path to the server script (.py or .js)
     """
         
     target = os.getenv("FINDXAI_MCP_CONNECTION")
@@ -30,6 +27,9 @@ class FindxAiClient:
     response = await self.session.list_tools()
     tools = response.tools
     print("\nConnected to findxai mcp with tools:", [tool.name for tool in tools])
+
+  def get_session(self) -> ClientSession:
+    return self.session
 
   async def list_tools(self) -> types.ListToolsResult:
     response = await self.session.list_tools()

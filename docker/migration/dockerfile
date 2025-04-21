@@ -1,0 +1,19 @@
+FROM python:3.13-slim
+WORKDIR /app
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY src/projects/migration/pyproject.toml ./
+COPY src/projects/migration/poetry.lock ./
+
+RUN pip install poetry \
+ && poetry config virtualenvs.create false \
+ && poetry install --no-root
+
+COPY src/projects/migration ./
+COPY docker/migration/*.sql ./sql/
+
+EXPOSE 8080
+CMD ["python", "/app/main.py"]

@@ -1,34 +1,59 @@
 version: '3.8'
 
 services:
-  findxai:
-    image: ghcr.io/taquangtu/findx:master
-    env_file:
-      - docker/findxai/.env
-    healthcheck:
-      test: ["CMD", "grpc_health_probe", "-addr=:50051"]
-      interval: 10s
-      timeout: 2s
-      retries: 3
-    depends_on:
-      - findxai_db
-      - redis
-    restart: unless-stopped
-
   findxai_db:
     image: postgres:17.4
     restart: always
     shm_size: 128mb
-    ports:
-      - 1298:5432
     environment:
       - POSTGRES_PASSWORD=longpassword
       - POSTGRES_USER=admin
       - POSTGRES_DB=findxai
-  
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d findxai"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    
   redis:
     image: redis:7.4.2
+    
+  findxai_db_migration:
+    build:
+      context: .
+      dockerfile: docker/migration/dockerfile
+    environment:
+      - SQL_DIR=/app/sql
+      - DB_URL=postgres://admin:longpassword@findxai_db:5432/findxai?sslmode=disable
 
+      - API_KEY=<YOUR_API_KEY>
+      - PROJECT_ID=<YOUR_PROJECT_ID>
+    depends_on:
+      findxai_db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 2s
+      retries: 3
+    restart: "no"
+  
+  findxai:
+    image: ghcr.io/xnoname79/findxai:latest
+    env_file:
+      - docker/findxai/.env
+    healthcheck:
+      test: ["CMD", "grpc_health_probe", "-addr=:50051"]
+      interval: 5s
+      timeout: 2s
+      retries: 3
+    depends_on:
+      findxai_db:
+        condition: service_healthy
+      findxai_db_migration:
+        condition: service_healthy
+    restart: unless-stopped
+  
   findxai_mcp:
     build:
       context: .
@@ -40,4 +65,3 @@ services:
     restart: always
     depends_on:
       - findxai
-

@@ -2,42 +2,68 @@ import asyncio
 import json
 
 from mcp import types
+from typing import Optional
 
 from dotenv import load_dotenv
 from mcp.types import TextContent
 
 from mcp_client import FindxAiClient
-from open_router import OpenRouter
+from langchain_ollama import ChatOllama
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessageChunk, AIMessage
+
+from langchain_mcp_adapters.tools import load_mcp_tools
+from langgraph.graph.graph import CompiledGraph
+from langgraph.prebuilt import create_react_agent
+
+import sys
+import time
+import threading
+import itertools
 
 load_dotenv()  # load environment variables from .env
 
 class ChatHostClient:
     def __init__(self):
         self.findxai_client = FindxAiClient()
-        self.open_router = OpenRouter("You are Peter, you will assist user find anything and answer any question for them") 
+        self.ollama = ChatOllama(
+            model="llama3.1:latest",
+        )
+        self.agent: Optional[CompiledGraph] = None
 
         self.available_tools: list[dict[str, any]] = []
         self.tool_server_dict: dict[str, str] = {}
-
 
     async def connect_mcp_servers(self):
         """Connect to mcp servers
         """
 
         await self.findxai_client.connect_to_server()
-        findxai_tools = await self.findxai_client.list_tools()
+        tools = await load_mcp_tools(self.findxai_client.get_session())
+        self.agent = create_react_agent(
+            self.ollama,
+            tools=tools,
+            prompt="""
+                You are a Vietnamese‑language assistant. 
+                You have access to a set of tools (each with its own name and description). 
+                ▶️ Only invoke a tool when the user explicitly needs something *you cannot do yourself*—for example, real‑time web searches, database lookups, or actions on external systems. Always add a date filter and human's query for tools that support it.
+                ▶️ If the user’s question can be answered from your own knowledge (e.g. definitions, calculations, general explanations), respond directly in Vietnamese *without* calling any tool.  
+                ▶️ When you do call a tool, use exactly the tool’s name and pass its arguments as specified, then wait for its output before continuing your answer.
+            """
+        )
 
+        findxai_tools = await self.findxai_client.list_tools()
         for tool in findxai_tools:
-          self.available_tools.append({
-            "name": tool.name,
-            "description": tool.description,
-            "input_schema": tool.inputSchema,
-          })
-          self.tool_server_dict[tool.name] = self.findxai_client.get_server_name()
-    
+            self.available_tools.append({
+                "name": tool.name,
+                "description": tool.description,
+                "input_schema": tool.inputSchema,
+            })
+            self.tool_server_dict[tool.name] = self.findxai_client.get_server_name(
+            )
+
     def get_server_by_tool(self, tool_name: str) -> str:
         """Get specific mcp client by tool name
-        
+
         Args:
         tool_name: specific name for calling tool
         """
@@ -53,7 +79,8 @@ class ChatHostClient:
         server_name = self.findxai_client.get_server_name()
         target = self.get_server_by_tool(name)
         if server_name != target:
-            raise RuntimeError(f"No MCP server for tool '{name}' (got '{server_name}')")
+            raise RuntimeError(
+                f"No MCP server for tool '{name}' (got '{server_name}')")
         # note the await
         return await self.findxai_client.call_tool(name=name, args=args)
 
@@ -62,51 +89,57 @@ class ChatHostClient:
         await self.findxai_client.cleanup()
 
     async def process_query(self, query: str) -> None:
-         # 1. Call your tool
-        response = await self.call_tool(name="find_contents", args={"q": query})
+        payload = {"messages": query}
 
-        # 2. Extract text content
-        if not response or not response.content:
-            print("⚠️ No response content received.")
-            return
+        # Create a local Event for stopping the spinner
+        stop_event = threading.Event()
 
-        text = response.content[0].text
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError:
-            print("❌ Failed to decode JSON from tool response.")
-            print("Raw content:", text)
-            return
+        # Spinner function closes over stop_event
+        def spin():
+            for c in itertools.cycle("|/-\\"):
+                if stop_event.is_set():
+                    break
+                sys.stdout.write(f"\rWaiting for response... {c}")
+                sys.stdout.flush()
+                time.sleep(0.1)
+            sys.stdout.write("\r" + " " * 30 + "\r")  # clear the line
 
-        # 3. Extract and print results
-        results = data.get("results", [])
-        if not results:
-            print("⚠️ No search results found.")
-            return
+        # Start spinner thread
+        spin_thread = threading.Thread(target=spin)
+        spin_thread.start()
+        
+        response = await self.agent.ainvoke(payload)
 
-        print(f"\n🔎 Top results for: {query}")
-        for idx, item in enumerate(results, 1):
-            title   = item.get("title", "No title")
-            link    = item.get("link", "No link")
-            snippet = item.get("snippet", "No snippet")
-            print(f"\n{idx}. {title}\n   🔗 {link}\n   📝 {snippet}")
+        stop_event.set()
+        spin_thread.join()
+        first_chunk = False
+
+        if "messages" in response:
+            messages = response["messages"]
+            for msg in reversed(messages):
+                if isinstance(msg, AIMessage):
+                    print(msg.content)
+
+        if isinstance(response, AIMessage):
+            print(response.content)
 
     async def chat_loop(self):
         """Run an interactive chat loop"""
         print("\nChat host client Started!")
         print("Type your queries or 'quit' to exit.")
-        
+
         while True:
             try:
                 query = input("\nQuery: ").strip()
-                
+
                 if query.lower() == 'quit':
                     break
-                    
+
                 await self.process_query(query)
-                    
+
             except Exception as e:
                 print(f"\nError: {str(e)}")
+
 
 async def main():
     client = ChatHostClient()
