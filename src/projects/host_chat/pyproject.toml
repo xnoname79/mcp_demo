@@ -13,7 +13,9 @@ dependencies = [
     "openai (>=1.75.0,<2.0.0)",
     "langchain-ollama (>=0.3.2,<0.4.0)",
     "langchain-mcp-adapters (>=0.0.9,<0.0.10)",
-    "langgraph (>=0.3.31,<0.4.0)"
+    "langgraph (>=0.3.31,<0.4.0)",
+    "langchain-openai (>=0.3.14,<0.4.0)",
+    "httpx (>=0.28.1,<0.29.0)"
 ]
 
 

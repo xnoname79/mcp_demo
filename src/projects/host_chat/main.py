@@ -1,5 +1,10 @@
+import sys
+import time
+import threading
+import itertools
 import asyncio
 import json
+import os
 
 from mcp import types
 from typing import Optional
@@ -8,17 +13,15 @@ from dotenv import load_dotenv
 from mcp.types import TextContent
 
 from mcp_client import FindxAiClient
+#from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessageChunk, AIMessage
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, FunctionMessage
 
 from langchain_mcp_adapters.tools import load_mcp_tools
 from langgraph.graph.graph import CompiledGraph
 from langgraph.prebuilt import create_react_agent
 
-import sys
-import time
-import threading
-import itertools
+from tool_play_audio import PlayBase64AudioTool
 
 load_dotenv()  # load environment variables from .env
 
@@ -30,59 +33,21 @@ class ChatHostClient:
         )
         self.agent: Optional[CompiledGraph] = None
 
-        self.available_tools: list[dict[str, any]] = []
-        self.tool_server_dict: dict[str, str] = {}
-
     async def connect_mcp_servers(self):
-        """Connect to mcp servers
-        """
-
+        """Connect to mcp servers"""
         await self.findxai_client.connect_to_server()
         tools = await load_mcp_tools(self.findxai_client.get_session())
         self.agent = create_react_agent(
             self.ollama,
             tools=tools,
             prompt="""
-                You are a Vietnamese‑language assistant. 
+                You are a helpful assistant. 
                 You have access to a set of tools (each with its own name and description). 
                 ▶️ Only invoke a tool when the user explicitly needs something *you cannot do yourself*—for example, real‑time web searches, database lookups, or actions on external systems. Always add a date filter and human's query for tools that support it.
                 ▶️ If the user’s question can be answered from your own knowledge (e.g. definitions, calculations, general explanations), respond directly in Vietnamese *without* calling any tool.  
                 ▶️ When you do call a tool, use exactly the tool’s name and pass its arguments as specified, then wait for its output before continuing your answer.
             """
         )
-
-        findxai_tools = await self.findxai_client.list_tools()
-        for tool in findxai_tools:
-            self.available_tools.append({
-                "name": tool.name,
-                "description": tool.description,
-                "input_schema": tool.inputSchema,
-            })
-            self.tool_server_dict[tool.name] = self.findxai_client.get_server_name(
-            )
-
-    def get_server_by_tool(self, tool_name: str) -> str:
-        """Get specific mcp client by tool name
-
-        Args:
-        tool_name: specific name for calling tool
-        """
-        return self.tool_server_dict[tool_name]
-
-    async def call_tool(self, name: str, args: dict[str, any]) -> types.CallToolResult:
-        """Call specific tool with provided mcp client
-
-        Args:
-        name: name of tool to be called
-        args: parameters passing through the tool
-        """
-        server_name = self.findxai_client.get_server_name()
-        target = self.get_server_by_tool(name)
-        if server_name != target:
-            raise RuntimeError(
-                f"No MCP server for tool '{name}' (got '{server_name}')")
-        # note the await
-        return await self.findxai_client.call_tool(name=name, args=args)
 
     async def cleanup(self):
         """Clean up resources"""
@@ -109,16 +74,43 @@ class ChatHostClient:
         spin_thread.start()
         
         response = await self.agent.ainvoke(payload)
+        os.getenv("DEBUG", "0") == "1" and print(f"Response: {response}")
 
         stop_event.set()
         spin_thread.join()
         first_chunk = False
+
+        # 2) normalize into a list of messages: used for tool_messages only
+        if isinstance(response, dict) and "messages" in response:
+            tool_messages = response["messages"]
+        else:
+            tool_messages = [response]
+        
+        for msg in tool_messages:
+            # msg has tool_calls in additional_kwargs
+            tool_calls = msg.additional_kwargs.get("tool_calls", [])
+            if isinstance(msg, AIMessage) and len(tool_calls) > 0:
+                if tool_calls[0]["function"]["name"] == "convert_text_to_speech_and_play_audio":
+                    args = json.loads(tool_calls[0]["function"]["arguments"])
+                    os.getenv("DEBUG", "0") == "1" and print(f"Args for convert_text_to_speech_and_play_audio: {args}")
+                    play_base64_audio = PlayBase64AudioTool()
+                    result = play_base64_audio.run({"text": args["text"], "language": args["language"]})
+            # msg has direct tool calls field
+            tool_calls = getattr(msg, "tool_calls", [])
+            if isinstance(msg, AIMessage) and len(tool_calls) > 0:
+                if tool_calls[0]["name"] == "convert_text_to_speech_and_play_audio":
+                    args = tool_calls[0]["args"]
+                    os.getenv("DEBUG", "0") == "1" and print(f"Args for convert_text_to_speech_and_play_audio: {args}")
+                    play_base64_audio = PlayBase64AudioTool()
+                    result = play_base64_audio.run({"text": args["text"], "language": args["language"]})
+
 
         if "messages" in response:
             messages = response["messages"]
             for msg in reversed(messages):
                 if isinstance(msg, AIMessage):
                     print(msg.content)
+                break
 
         if isinstance(response, AIMessage):
             print(response.content)

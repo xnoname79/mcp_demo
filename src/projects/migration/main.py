@@ -107,11 +107,13 @@ def create_app() -> Flask:
 
 
 def main():
-    # Step 1: Run migrations
-    run_migrations(os.getenv("SQL_DIR", "."), os.getenv("DB_URL", "postgresql://user:pass@localhost:5432/mydb"))
 
-    # Step2: Run env SQL
-    run_env_sql(os.getenv("DB_URL", "postgresql://user:pass@localhost:5432/mydb"))
+    if os.getenv("RUN_MIGRATION", "0") == "1":
+        # Step 1: Run migrations
+        run_migrations(os.getenv("SQL_DIR", "."), os.getenv("DB_URL", "postgresql://user:pass@localhost:5432/mydb"))
+
+        # Step2: Run env SQL
+        run_env_sql(os.getenv("DB_URL", "postgresql://user:pass@localhost:5432/mydb"))
 
     # Step 3: Start healthcheck server
     app = create_app()

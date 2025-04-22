@@ -25,6 +25,7 @@ services:
     environment:
       - SQL_DIR=/app/sql
       - DB_URL=postgres://admin:longpassword@findxai_db:5432/findxai?sslmode=disable
+      - RUN_MIGRATION=${RUN_MIGRATION}
 
       - API_KEY=<YOUR_API_KEY>
       - PROJECT_ID=<YOUR_PROJECT_ID>
@@ -54,6 +55,22 @@ services:
         condition: service_healthy
     restart: unless-stopped
   
+  tts:
+    image: ghcr.io/xnoname79/tts:latest
+    healthcheck:
+      test: [
+        "CMD",
+        "python",
+        "-c",
+        "import urllib.request, sys; resp = urllib.request.urlopen('http://localhost:8080/health'); sys.exit(0 if resp.status == 200 else 1)"
+      ]
+      interval: 5s
+      timeout: 2s
+      retries: 3
+    ports:
+      - 8081:8080
+    restart: unless-stopped
+  
   findxai_mcp:
     build:
       context: .
@@ -65,3 +82,4 @@ services:
     restart: always
     depends_on:
       - findxai
+      - tts

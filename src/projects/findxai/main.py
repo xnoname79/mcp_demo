@@ -2,6 +2,8 @@ import os
 import json
 import grpc
 import asyncio
+import httpx
+import base64
 
 from grpc import aio
 from google.protobuf.json_format import MessageToDict
@@ -22,7 +24,7 @@ async def search_contents(
     c2coff: str = "",
     cr: str = "",
     date_restrict: str = "",
-    exact_terms: str = "",
+    filter_terms: str = "",
     exclude_terms: str = "",
     file_type: str = "",
     filter: str = "",
@@ -40,7 +42,7 @@ async def search_contents(
     lr: str = "",
     num: int = 10,
     or_terms: str = "",
-    q: str = "",
+    search_query: str = "",
     rights: str = "",
     safe: str = "",
     search_type: str = "",
@@ -53,10 +55,11 @@ async def search_contents(
     Performs a Google Custom Search with the given parameters.
 
     Args:
+        search_query (str): **Required.** search string.
+        date_restrict (str): **Required.** Restricts results by date. Formats: 'd[number]', 'w[number]', 'm[number]', 'y[number]' (e.g., 'd7' for the last 7 days); the number must be an integer ≥ 1. This is a required parameter.
+        filter_terms (str): **Required.** A pipe-separated list of important key words derived from the search_query string (e.g., "btc|crypto|news|etc..."). This parameter must be used together with search_query.
         c2coff (str): Enables/disables Simplified and Traditional Chinese Search. '1' to disable, '0' to enable (default).
         cr (str): Restricts results to documents from a country (e.g., 'countryUS'). Use boolean operators if needed.
-        date_restrict (str): Restricts results by date. Formats: 'd[number]', 'w[number]', 'm[number]', 'y[number]' (e.g., 'd7' for the last 7 days); the number must be an integer ≥ 1.
-        exact_terms (str): Phrase that all results must contain.
         exclude_terms (str): Word or phrase that must not appear in any results.
         file_type (str): Restricts results to specified file extension (e.g., 'pdf', 'docx').
         filter (str): Duplicate content filter control. '0' to disable, '1' to enable (default).
@@ -74,7 +77,6 @@ async def search_contents(
         lr (str): Restricts search language (e.g., 'lang_en').
         num (int): Number of results to return (1–10).
         or_terms (str): Additional terms where results must contain at least one.
-        q (str): Query string.
         rights (str): Filters by license (e.g., 'cc_publicdomain').
         safe (str): SafeSearch level ('active' for filter, 'off').
         search_type (str): Type of search ('image' for image search).
@@ -91,11 +93,14 @@ async def search_contents(
     stub = search_pb2_grpc.SearchServiceStub(channel)
     content_stub = content_pb2_grpc.ContentServiceStub(channel)
 
+    _mapping = {'d0': 'd1', 'w0': 'w1', 'm0': 'm1', 'y0': 'y1'}
+    date_restrict = _mapping.get(date_restrict, date_restrict)
+
     request =  search_pb2.SearchRequest(
         c2coff=c2coff,
         cr=cr,
         date_restrict=date_restrict,
-        exact_terms=exact_terms,
+        exact_terms=filter_terms,
         exclude_terms=exclude_terms,
         file_type=file_type,
         filter=filter,
@@ -113,7 +118,7 @@ async def search_contents(
         lr=lr,
         num=num,
         or_terms=or_terms,
-        q=q,
+        q=search_query,
         rights=rights,
         safe=safe,
         search_type=search_type,
@@ -131,17 +136,7 @@ async def search_contents(
         if res.get("link")
     ]
 
-    # content_request = content_pb2.ExtractContentFromLinksRequest(links=list_link)
-    # content_response = await content_stub.ExtractContentFromLinks(content_request)
-    # content_resp_dict = MessageToDict(content_response, preserving_proto_field_name=True)
-
-    # list_result = [
-    #     res["content"]
-    #     for res in content_resp_dict.get("contents", [])
-    #     if res.get("title")
-    # ]
-
-    header = f"The result for query: {q}"
+    header = f"The result for query: {search_query}"
     sep = "\n"
     body = sep.join(list_result)
     return f"{header}{sep}{body}"
@@ -178,6 +173,23 @@ async def extract_content_from_article_links(
     sep = "\n"
     body = sep.join(list_result)
     return f"{header}{sep}{body}"
+
+@mcp.tool()
+async def convert_text_to_speech_and_play_audio(
+    text: str = "",
+    language: str = "en",
+) -> str:
+    """
+    Converts text to speech and play audio.
+
+    Args:
+        text (str): Text to convert to speech.
+        language (str): Language code for the TTS service (default: "en").
+
+    Returns:
+        str: Confirmation message.
+    """
+    return "✅ Audio played successfully."
 
 if __name__ == "__main__":
     # Initialize and run the server
