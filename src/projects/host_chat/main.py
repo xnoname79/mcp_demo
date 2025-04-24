@@ -8,7 +8,7 @@ import time
 
 from dotenv import load_dotenv
 from hippocampus import Hippocampus
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_mcp_adapters.tools import load_mcp_tools
 from langchain_ollama import ChatOllama
 from langgraph.graph.graph import CompiledGraph
@@ -30,7 +30,7 @@ class ChatHostClient:
         self.ollama = ChatOllama(
             model="qwen2.5:3b",
         )
-        self.hippocampus = Hippocampus()
+        self.hippocampus = Hippocampus(128000)
         self.agent: CompiledGraph
 
     async def connect_mcp_servers(self):
@@ -121,10 +121,25 @@ class ChatHostClient:
     async def _process_query(self, query: str) -> None:
         memories = self.hippocampus.recall_memory()
         messages = []
+        if memories:
+            messages.append(
+                SystemMessage(content="Use the memory below to answer accurately.")
+            )
 
         os.getenv("DEBUG", "0") == "1" and print(f"Memories: {memories}\n")
         for turn in memories:
-            messages.append(turn)
+            if turn["role"] == "user":
+                messages.append(
+                    SystemMessage(
+                        content=f"Memory of user's message: {turn['content']}"
+                    )
+                )
+            if turn["role"] == "assistant":
+                messages.append(
+                    SystemMessage(
+                        content=f"Memory of assistant's response: {turn['content']}"
+                    )
+                )
 
         messages.append({"role": "user", "content": query})
         payload = {"messages": messages}

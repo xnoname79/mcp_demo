@@ -10,12 +10,13 @@ class Hippocampus:
     A class representing the hippocampus, a region of the brain associated with memory and spatial navigation.
     """
 
-    def __init__(self):
+    def __init__(self, context_length: int = 8000):
         """
         Initializes the Hippocampus object.
         """
         self.redis_client: redis.Redis
-        self.memory_context_length = 8000  # 8000 tokens
+        # Adjust memory window if needed
+        self.memory_context_length = int(context_length * 0.8)  # 8000 tokens
         self.memory = []
 
     def memory_established(self, redis_url: str):
