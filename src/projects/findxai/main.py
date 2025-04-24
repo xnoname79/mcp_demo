@@ -1,23 +1,19 @@
-import os
-import json
-import grpc
 import asyncio
-import httpx
-import base64
+import os
 
-from grpc import aio
-from google.protobuf.json_format import MessageToDict
-from mcp.server.fastmcp import FastMCP
-from dotenv import load_dotenv
-
-import search_pb2
-import search_pb2_grpc
 import content_pb2
 import content_pb2_grpc
+import search_pb2
+import search_pb2_grpc
+from dotenv import load_dotenv
+from google.protobuf.json_format import MessageToDict
+from grpc import aio
+from mcp.server.fastmcp import FastMCP
 
 load_dotenv()
 
 mcp = FastMCP("findxai")
+
 
 @mcp.tool()
 async def search_contents(
@@ -62,7 +58,7 @@ async def search_contents(
         cr (str): Restricts results to documents from a country (e.g., 'countryUS'). Use boolean operators if needed.
         exclude_terms (str): Word or phrase that must not appear in any results.
         file_type (str): Restricts results to specified file extension (e.g., 'pdf', 'docx').
-        filter (str): Duplicate content filter control. '0' to disable, '1' to enable (default).
+        is_filter (str): Duplicate content filter control. '0' to disable, '1' to enable (default).
         gl (str): Geolocation of end user as two-letter country code (e.g., 'us', 'de').
         high_range (str): Ending value for an inclusive search range; use with low_range.
         hl (str): UI language for search (e.g., 'en', 'fr').
@@ -91,12 +87,11 @@ async def search_contents(
     target = os.getenv("FINDXAI_GRPC_CONNECTION", "localhost:50051")
     channel = aio.insecure_channel(target)
     stub = search_pb2_grpc.SearchServiceStub(channel)
-    content_stub = content_pb2_grpc.ContentServiceStub(channel)
 
-    _mapping = {'d0': 'd1', 'w0': 'w1', 'm0': 'm1', 'y0': 'y1'}
+    _mapping = {"d0": "d1", "w0": "w1", "m0": "m1", "y0": "y1"}
     date_restrict = _mapping.get(date_restrict, date_restrict)
 
-    request =  search_pb2.SearchRequest(
+    request = search_pb2.SearchRequest(
         c2coff=c2coff,
         cr=cr,
         date_restrict=date_restrict,
@@ -131,15 +126,14 @@ async def search_contents(
 
     resp_dict = MessageToDict(response, preserving_proto_field_name=True)
     list_result = [
-        res["snippet"]
-        for res in resp_dict.get("results", [])
-        if res.get("link")
+        res["snippet"] for res in resp_dict.get("results", []) if res.get("link")
     ]
 
     header = f"The result for query: {search_query}"
     sep = "\n"
     body = sep.join(list_result)
     return f"{header}{sep}{body}"
+
 
 @mcp.tool()
 async def extract_content_from_article_links(
@@ -164,15 +158,14 @@ async def extract_content_from_article_links(
 
     resp_dict = MessageToDict(response, preserving_proto_field_name=True)
     list_result = [
-        res["content"]
-        for res in resp_dict.get("contents", [])
-        if res.get("title")
+        res["content"] for res in resp_dict.get("contents", []) if res.get("title")
     ]
 
     header = f"The extracted content from links: {links}"
     sep = "\n"
     body = sep.join(list_result)
     return f"{header}{sep}{body}"
+
 
 @mcp.tool()
 async def convert_text_to_speech_and_play_audio(
@@ -191,10 +184,9 @@ async def convert_text_to_speech_and_play_audio(
     """
     return "✅ Audio played successfully."
 
+
 if __name__ == "__main__":
     # Initialize and run the server
     mcp.settings.port = 8080
     mcp.settings.host = "0.0.0.0"
     asyncio.run(mcp.run_sse_async())
-    
-

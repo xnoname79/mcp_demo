@@ -17,6 +17,8 @@ services:
     
   redis:
     image: redis:7.4.2
+    ports:
+      - 6379:6379
     
   findxai_db_migration:
     build:
@@ -27,13 +29,18 @@ services:
       - DB_URL=postgres://admin:longpassword@findxai_db:5432/findxai?sslmode=disable
       - RUN_MIGRATION=${RUN_MIGRATION}
 
-      - API_KEY=<YOUR_API_KEY>
-      - PROJECT_ID=<YOUR_PROJECT_ID>
+      - API_KEY=${API_KEY}
+      - PROJECT_ID=${PROJECT_ID}
     depends_on:
       findxai_db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: [
+        "CMD",
+        "python",
+        "-c",
+        "import urllib.request, sys; resp = urllib.request.urlopen('http://localhost:8080/health'); sys.exit(0 if resp.status == 200 else 1)"
+      ]
       interval: 5s
       timeout: 2s
       retries: 3
@@ -82,4 +89,3 @@ services:
     restart: always
     depends_on:
       - findxai
-      - tts

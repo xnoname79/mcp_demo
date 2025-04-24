@@ -1,8 +1,9 @@
 import os
-import json, base64, subprocess, requests
+import subprocess
+
 import httpx
 from langchain_core.tools import BaseTool
-from typing import Optional
+
 
 class PlayBase64AudioTool(BaseTool):
     name: str = "Convert text to speech and play audio."
@@ -24,7 +25,12 @@ class PlayBase64AudioTool(BaseTool):
 
         player = None
         for cmd in ("mpv", "mpg123", "aplay"):
-            if subprocess.call(["which", cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0:
+            if (
+                subprocess.call(
+                    ["which", cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+                == 0
+            ):
                 player = cmd
                 break
 
@@ -34,5 +40,5 @@ class PlayBase64AudioTool(BaseTool):
         else:
             return f"✅ Audio saved to {filename} (no player found)"
 
-    def _arun(self, text: str) -> str:
+    async def _arun(self, text: str) -> str:
         raise NotImplementedError("Async not supported in this example")
