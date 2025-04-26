@@ -11,6 +11,7 @@ from hippocampus import Hippocampus
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_mcp_adapters.tools import load_mcp_tools
 from langchain_ollama import ChatOllama
+from langchain_openai import ChatOpenAI
 from langgraph.graph.graph import CompiledGraph
 from langgraph.prebuilt import create_react_agent
 from mcp_client import FindxAiClient
@@ -23,15 +24,28 @@ ROLE_BY_CLASS = {
     AIMessage: "assistant",
 }
 
+MODEL_CONTEXT_LENGTH = {
+    "ollama/qwen2.5:3b": 128000,
+    "openai/gpt-4o-mini": 128000,
+}
+
 
 class ChatHostClient:
-    def __init__(self):
+    def __init__(self, model: str):
         self.findxai_client = FindxAiClient()
-        self.ollama = ChatOllama(
-            model="qwen2.5:3b",
-        )
-        self.hippocampus = Hippocampus(128000)
+        model_name = model.split("/")[1]
+        if "openai" in model:
+            self.model = ChatOpenAI(
+                model=model_name,
+                api_key=os.getenv("OPENAI_API_KEY"),
+            )
+        elif "ollama" in model:
+            self.model = ChatOllama(
+                model=model_name,
+            )
+        self.hippocampus = Hippocampus(MODEL_CONTEXT_LENGTH[model])
         self.agent: CompiledGraph
+        print(f"You are using the model: {model}")
 
     async def connect_mcp_servers(self):
         """Connect to mcp servers"""
@@ -39,7 +53,7 @@ class ChatHostClient:
         await self.findxai_client.connect_to_server()
         tools = await load_mcp_tools(self.findxai_client.get_session())
         self.agent = create_react_agent(
-            self.ollama,
+            self.model,
             tools=tools,
             prompt="""
                 You are a helpful assistant. 
@@ -190,7 +204,7 @@ class ChatHostClient:
 
 
 async def main():
-    client = ChatHostClient()
+    client = ChatHostClient(os.getenv("LLM_MODEL", "ollama/qwen2.5:3b"))
     try:
         await client.connect_mcp_servers()
         await client.chat_loop()
