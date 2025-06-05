@@ -26,7 +26,8 @@ class Hippocampus:
         host = parsed_url.hostname
         port = parsed_url.port
         qs = {k: v[0] for k, v in parse_qs(parsed_url.query).items()}
-        self.redis_client = redis.StrictRedis(host=host, port=port, db=int(qs["db"]))
+        db = int(qs.get("db", "0"))
+        self.redis_client = redis.StrictRedis(host=host, port=port, db=db)
 
     def _count_token(self, content: str) -> int:
         encoding = tiktoken.get_encoding("cl100k_base")
