@@ -49,7 +49,8 @@ class ChatHostClient:
 
     async def connect_mcp_servers(self):
         """Connect to mcp servers"""
-        self.hippocampus.memory_established(os.getenv("REDIS_URL", ""))
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379?db=0")
+        self.hippocampus.memory_established(redis_url)
         await self.findxai_client.connect_to_server()
         tools = await load_mcp_tools(self.findxai_client.get_session())
         self.agent = create_react_agent(
